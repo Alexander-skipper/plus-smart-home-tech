@@ -1,0 +1,13 @@
+spring:
+  jackson:
+    serialization:
+      write-enums-using-to-string: true
+    deserialization:
+      read-enums-using-to-string: true
+  kafka:
+    bootstrap-servers: localhost:9092
+
+kafka:
+  topics:
+    sensors: telemetry.sensors.v1
+    hubs: telemetry.hubs.v1
