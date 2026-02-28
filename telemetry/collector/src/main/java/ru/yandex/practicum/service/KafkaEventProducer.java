@@ -7,9 +7,7 @@ import org.apache.kafka.clients.producer.ProducerRecord;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import ru.yandex.practicum.kafka.telemetry.event.*;
-import ru.yandex.practicum.mapper.*;
-import ru.yandex.practicum.model.base.HubEvent;
-import ru.yandex.practicum.model.base.SensorEvent;
+
 
 @Slf4j
 @Service
@@ -18,8 +16,6 @@ public class KafkaEventProducer {
 
     private final KafkaProducer<String, SensorEventAvro> sensorEventProducer;
     private final KafkaProducer<String, HubEventAvro> hubEventProducer;
-    private final SensorEventMapper sensorMapper;
-    private final HubEventMapper hubMapper;
 
     @Value("${kafka.topics.sensors}")
     private String sensorsTopic;
@@ -27,11 +23,10 @@ public class KafkaEventProducer {
     @Value("${kafka.topics.hubs}")
     private String hubsTopic;
 
-    public void sendSensorEvent(SensorEvent event) {
+    public void sendSensorEvent(SensorEventAvro event) {
         try {
-            SensorEventAvro avroEvent = sensorMapper.toAvro(event);
             ProducerRecord<String, SensorEventAvro> record =
-                    new ProducerRecord<>(sensorsTopic, event.getId(), avroEvent);
+                    new ProducerRecord<>(sensorsTopic, event.getId().toString(), event);
 
             sensorEventProducer.send(record, (metadata, exception) -> {
                 if (exception != null) {
@@ -47,11 +42,10 @@ public class KafkaEventProducer {
         }
     }
 
-    public void sendHubEvent(HubEvent event) {
+    public void sendHubEvent(HubEventAvro event) {
         try {
-            HubEventAvro avroEvent = hubMapper.toAvro(event);
             ProducerRecord<String, HubEventAvro> record =
-                    new ProducerRecord<>(hubsTopic, event.getHubId(), avroEvent);
+                    new ProducerRecord<>(hubsTopic, event.getHubId().toString(),event);
 
             hubEventProducer.send(record, (metadata, exception) -> {
                 if (exception != null) {
