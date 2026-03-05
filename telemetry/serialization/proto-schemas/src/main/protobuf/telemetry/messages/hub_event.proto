@@ -72,15 +72,22 @@ enum ActionTypeProto {
 message DeviceActionProto {
   string sensor_id = 1;
   ActionTypeProto type = 2;
-  optional int32 value = 3;  // optional поддерживается в protobuf 3.15+
+  optional int32 value = 3;
 }
 
 message ScenarioAddedEventProto {
   string name = 1;
-  repeated ScenarioConditionProto conditions = 2;  // множественное число для списка
-  repeated DeviceActionProto actions = 3;          // множественное число для списка
+  repeated ScenarioConditionProto conditions = 2;
+  repeated DeviceActionProto actions = 3;
 }
 
 message ScenarioRemovedEventProto {
   string name = 1;
+}
+
+message DeviceActionRequest {
+  string hub_id = 1;
+  string scenario_name = 2;
+  DeviceActionProto action = 3;
+  google.protobuf.Timestamp timestamp = 4;
 }
