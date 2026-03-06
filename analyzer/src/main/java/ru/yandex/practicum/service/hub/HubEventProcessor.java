@@ -16,8 +16,9 @@ import ru.yandex.practicum.model.enums.*;
 import ru.yandex.practicum.repository.*;
 
 import java.time.Duration;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -113,14 +114,17 @@ public class HubEventProcessor implements Runnable {
         log.info("Добавление сценария: hubId={}, scenarioName={}", hubId, payload.getName());
 
         try {
-            Optional<Scenario> existingScenarioOpt = scenarioRepository.findByHubIdAndNameWithDetails(hubId, payload.getName());
+            boolean exists = scenarioRepository.existsByHubIdAndName(hubId, payload.getName());
 
             Scenario scenario;
-            if (existingScenarioOpt.isPresent()) {
-                scenario = existingScenarioOpt.get();
-                log.debug("Найден существующий сценарий '{}' для хаба {}. Обновление...", payload.getName(), hubId);
-                scenario.getConditions().clear();
-                scenario.getActions().clear();
+            if (exists) {
+                log.debug("Сценарий '{}' для хаба {} уже существует. Обновление...", payload.getName(), hubId);
+                scenario = scenarioRepository.findByHubIdAndNameWithDetails(hubId, payload.getName())
+                        .orElseThrow(() -> new RuntimeException("Сценарий не найден: " + payload.getName()));
+
+                scenarioConditionRepository.deleteByScenarioId(scenario.getId());
+                scenarioActionRepository.deleteByScenarioId(scenario.getId());
+                scenarioRepository.flush(); // Принудительно применяем изменения
             } else {
                 log.debug("Сценарий '{}' для хаба {} не найден. Создание нового...", payload.getName(), hubId);
                 scenario = Scenario.builder()
@@ -130,9 +134,15 @@ public class HubEventProcessor implements Runnable {
                 scenario = scenarioRepository.save(scenario);
             }
 
+            Map<String, Sensor> sensorsMap = sensorRepository.findByHubId(hubId).stream()
+                    .collect(Collectors.toMap(Sensor::getId, Function.identity()));
+
+            List<ScenarioCondition> conditions = new ArrayList<>();
             for (ScenarioConditionAvro conditionAvro : payload.getConditions()) {
-                Sensor sensor = sensorRepository.findByIdAndHubId(conditionAvro.getSensorId(), hubId)
-                        .orElseThrow(() -> new RuntimeException("Датчик не найден: " + conditionAvro.getSensorId()));
+                Sensor sensor = sensorsMap.get(conditionAvro.getSensorId());
+                if (sensor == null) {
+                    throw new RuntimeException("Датчик не найден: " + conditionAvro.getSensorId());
+                }
 
                 Condition condition = Condition.builder()
                         .type(ConditionType.valueOf(conditionAvro.getType().name()))
@@ -146,13 +156,17 @@ public class HubEventProcessor implements Runnable {
                         .sensor(sensor)
                         .condition(savedCondition)
                         .build();
-                scenarioConditionRepository.save(scenarioCondition);
-                scenario.getConditions().add(scenarioCondition);
+                conditions.add(scenarioCondition);
             }
+            scenarioConditionRepository.saveAll(conditions);
+            log.debug("Сохранено {} условий для сценария '{}'", conditions.size(), payload.getName());
 
+            List<ScenarioAction> actions = new ArrayList<>();
             for (DeviceActionAvro actionAvro : payload.getActions()) {
-                Sensor sensor = sensorRepository.findByIdAndHubId(actionAvro.getSensorId(), hubId)
-                        .orElseThrow(() -> new RuntimeException("Датчик не найден: " + actionAvro.getSensorId()));
+                Sensor sensor = sensorsMap.get(actionAvro.getSensorId());
+                if (sensor == null) {
+                    throw new RuntimeException("Датчик не найден: " + actionAvro.getSensorId());
+                }
 
                 Action action = Action.builder()
                         .type(ActionType.valueOf(actionAvro.getType().name()))
@@ -165,15 +179,13 @@ public class HubEventProcessor implements Runnable {
                         .sensor(sensor)
                         .action(savedAction)
                         .build();
-                scenarioActionRepository.save(scenarioAction);
-                scenario.getActions().add(scenarioAction);
+                actions.add(scenarioAction);
             }
+            scenarioActionRepository.saveAll(actions);
+            log.debug("Сохранено {} действий для сценария '{}'", actions.size(), payload.getName());
 
-            if (existingScenarioOpt.isEmpty()) {
-                scenarioRepository.save(scenario);
-            }
-
-            log.info("Сценарий успешно сохранен: hubId={}, scenarioName={}", hubId, payload.getName());
+            log.info("Сценарий успешно сохранен: hubId={}, scenarioName={}, условий={}, действий={}",
+                    hubId, payload.getName(), conditions.size(), actions.size());
 
         } catch (Exception e) {
             log.error("Ошибка при сохранении сценария: hubId={}, scenarioName={}",

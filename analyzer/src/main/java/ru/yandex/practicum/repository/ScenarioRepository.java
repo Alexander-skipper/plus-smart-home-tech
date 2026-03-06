@@ -15,6 +15,11 @@ public interface ScenarioRepository extends JpaRepository<Scenario, Long> {
 
     Optional<Scenario> findByHubIdAndName(String hubId, String name);
 
+    boolean existsByHubIdAndName(String hubId, String name);
+
+    @Query("SELECT s FROM Scenario s WHERE s.hubId = :hubId")
+    List<Scenario> findByHubIdWithDetails(@Param("hubId") String hubId);
+
     @Query("SELECT DISTINCT s FROM Scenario s " +
             "LEFT JOIN FETCH s.conditions sc " +
             "LEFT JOIN FETCH sc.condition " +
@@ -22,8 +27,8 @@ public interface ScenarioRepository extends JpaRepository<Scenario, Long> {
             "LEFT JOIN FETCH s.actions sa " +
             "LEFT JOIN FETCH sa.action " +
             "LEFT JOIN FETCH sa.sensor " +
-            "WHERE s.hubId = :hubId")
-    List<Scenario> findByHubIdWithDetails(@Param("hubId") String hubId);
+            "WHERE s.id IN :scenarioIds")
+    List<Scenario> findByIdsWithDetails(@Param("scenarioIds") List<Long> scenarioIds);
 
     @Query("SELECT DISTINCT s FROM Scenario s " +
             "LEFT JOIN FETCH s.conditions sc " +

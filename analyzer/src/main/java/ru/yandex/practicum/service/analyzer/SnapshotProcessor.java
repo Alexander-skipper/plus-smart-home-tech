@@ -17,8 +17,6 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 @Slf4j
 @Component
@@ -32,7 +30,8 @@ public class SnapshotProcessor {
     @Value("${kafka.topics.snapshots-in}")
     private String snapshotsInTopic;
 
-    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
+    private long processedCount = 0;
+    private long startTime = System.currentTimeMillis();
 
     public void start() {
         try {
@@ -42,23 +41,19 @@ public class SnapshotProcessor {
             Map<TopicPartition, OffsetAndMetadata> currentOffsets = new HashMap<>();
 
             while (true) {
-                ConsumerRecords<String, SensorsSnapshotAvro> records = consumer.poll(Duration.ofMillis(1000));
+                ConsumerRecords<String, SensorsSnapshotAvro> records = consumer.poll(Duration.ofMillis(100));
+
+                if (records.isEmpty()) {
+                    continue;
+                }
+
+                int recordCount = records.count();
+                log.info("Получено {} снапшотов за poll", recordCount);
 
                 for (ConsumerRecord<String, SensorsSnapshotAvro> record : records) {
                     SensorsSnapshotAvro snapshot = record.value();
                     if (snapshot != null) {
-                        log.debug("Получен снапшот для хаба {}, timestamp: {}",
-                                snapshot.getHubId(), snapshot.getTimestamp());
-
-                        SensorsSnapshotAvro snapshotCopy = snapshot; // нужна копия для лямбды
-                        executorService.submit(() -> {
-                            try {
-                                scenarioAnalyzer.analyze(snapshotCopy);
-                            } catch (Exception e) {
-                                log.error("Ошибка при анализе снапшота для хаба {}",
-                                        snapshotCopy.getHubId(), e);
-                            }
-                        });
+                        processSnapshot(snapshot);
                     }
 
                     currentOffsets.put(
@@ -70,7 +65,7 @@ public class SnapshotProcessor {
                 if (!currentOffsets.isEmpty()) {
                     consumer.commitSync(currentOffsets);
                     currentOffsets.clear();
-                    log.debug("Смещения для снапшотов зафиксированы");
+                    log.debug("Смещения зафиксированы");
                 }
             }
 
@@ -79,9 +74,28 @@ public class SnapshotProcessor {
         } catch (Exception e) {
             log.error("Ошибка в SnapshotProcessor", e);
         } finally {
-            executorService.shutdown();
             consumer.close();
-            log.info("SnapshotProcessor закрыт");
+            log.info("SnapshotProcessor закрыт. Всего обработано: {}", processedCount);
+        }
+    }
+
+    private void processSnapshot(SensorsSnapshotAvro snapshot) {
+        long snapshotStart = System.currentTimeMillis();
+
+        try {
+            log.info(">>> ОБРАБОТКА СНАПШОТА для хаба: {}, timestamp: {}, датчиков: {}",
+                    snapshot.getHubId(), snapshot.getTimestamp(), snapshot.getSensorsState().size());
+
+            scenarioAnalyzer.analyze(snapshot);
+
+            long duration = System.currentTimeMillis() - snapshotStart;
+            processedCount++;
+
+            log.info("СНАПШОТ ОБРАБОТАН для хаба: {}, время: {} мс, всего обработано: {}",
+                    snapshot.getHubId(), duration, processedCount);
+
+        } catch (Exception e) {
+            log.error("ОШИБКА при анализе снапшота для хаба {}", snapshot.getHubId(), e);
         }
     }
 }

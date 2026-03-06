@@ -3,14 +3,17 @@ package ru.yandex.practicum.service.analyzer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 import ru.yandex.practicum.kafka.telemetry.event.*;
 import ru.yandex.practicum.model.*;
+import ru.yandex.practicum.model.enums.ActionType;
 import ru.yandex.practicum.model.enums.ConditionOperation;
 import ru.yandex.practicum.model.enums.ConditionType;
 import ru.yandex.practicum.repository.ScenarioRepository;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 @Slf4j
 @Component
@@ -20,165 +23,173 @@ public class ScenarioAnalyzer {
     private final ScenarioRepository scenarioRepository;
     private final ActionExecutor actionExecutor;
 
+    @Transactional(readOnly = true)
     public void analyze(SensorsSnapshotAvro snapshot) {
         String hubId = snapshot.getHubId();
         Map<String, SensorStateAvro> sensorsState = snapshot.getSensorsState();
 
-        log.debug("Получен снапшот для хаба {} с {} датчиками", hubId, sensorsState.size());
+        List<Scenario> scenariosLite = scenarioRepository.findByHubIdWithDetails(hubId);
 
-        List<Scenario> scenarios = scenarioRepository.findByHubIdWithDetails(hubId);
-
-        if (scenarios.isEmpty()) {
-            log.debug("Нет сценариев для хаба {}", hubId);
+        if (scenariosLite.isEmpty()) {
             return;
         }
 
-        log.info("Найдено {} сценариев для хаба {}", scenarios.size(), hubId);
+        List<Long> scenarioIds = scenariosLite.stream()
+                .map(Scenario::getId)
+                .collect(Collectors.toList());
 
-        scenarios.forEach(scenario -> {
-            log.debug("Проверка сценария '{}' для хаба {}", scenario.getName(), hubId);
+        List<Scenario> scenarios = scenarioRepository.findByIdsWithDetails(scenarioIds);
 
-            boolean allConditionsMet = checkAllConditions(scenario, sensorsState);
+        for (Scenario scenario : scenarios) {
+            if (!hasAllSensors(scenario, sensorsState)) {
+                continue;
+            }
+
+            boolean allConditionsMet = checkAllConditionsFast(scenario, sensorsState);
 
             if (allConditionsMet) {
-                log.info("ВСЕ УСЛОВИЯ ВЫПОЛНЕНЫ для сценария '{}' хаба {}", scenario.getName(), hubId);
-                actionExecutor.executeActions(hubId, scenario.getName(), scenario.getActions());
-            } else {
-                log.debug("Условия не выполнены для сценария '{}' хаба {}", scenario.getName(), hubId);
+                if (shouldExecuteActions(scenario, sensorsState)) {
+                    log.info("Сценарий '{}' выполняется для хаба {}", scenario.getName(), hubId);
+                    actionExecutor.executeActions(hubId, scenario.getName(), scenario.getActions());
+                } else {
+                    log.debug("Сценарий '{}' уже выполнен, действия не требуются", scenario.getName());
+                }
             }
-        });
+        }
     }
 
-    private boolean checkAllConditions(Scenario scenario, Map<String, SensorStateAvro> sensorsState) {
-        return scenario.getConditions().stream()
-                .allMatch(sc -> checkCondition(sc, sensorsState));
+    private boolean shouldExecuteActions(Scenario scenario, Map<String, SensorStateAvro> sensorsState) {
+        for (ScenarioAction action : scenario.getActions()) {
+            String targetSensorId = action.getSensor().getId();
+            SensorStateAvro targetState = sensorsState.get(targetSensorId);
+            ActionType actionType = action.getAction().getType();
+
+            if (targetState == null) {
+                log.debug("Состояние целевого датчика {} неизвестно, выполняем действие", targetSensorId);
+                return true;
+            }
+
+            Object currentValue = extractValueForAction(targetState.getData(), actionType);
+
+            boolean shouldExecute = shouldExecuteForActionType(currentValue, actionType);
+
+            if (shouldExecute) {
+                log.debug("Действие {} для датчика {} необходимо выполнить (текущее значение: {})",
+                        actionType, targetSensorId, currentValue);
+                return true;
+            } else {
+                log.debug("Действие {} для датчика {} НЕ требуется (текущее значение: {})",
+                        actionType, targetSensorId, currentValue);
+            }
+        }
+        return false;
     }
 
-    private boolean checkCondition(ScenarioCondition scenarioCondition, Map<String, SensorStateAvro> sensorsState) {
+    private boolean shouldExecuteForActionType(Object currentValue, ActionType actionType) {
+        return true;
+    }
+
+    private Object extractValueForAction(Object data, ActionType actionType) {
+        if (data instanceof SwitchSensorAvro switchSensor) {
+            return switchSensor.getState();
+        } else if (data instanceof ClimateSensorAvro climate) {
+            return climate.getTemperatureC();
+        } else if (data instanceof LightSensorAvro light) {
+            return light.getLuminosity();
+        } else if (data instanceof MotionSensorAvro motion) {
+            return motion.getMotion();
+        } else if (data instanceof TemperatureSensorAvro temperature) {
+            return temperature.getTemperatureC();
+        }
+        return null;
+    }
+
+    private boolean hasAllSensors(Scenario scenario, Map<String, SensorStateAvro> sensorsState) {
+        for (ScenarioCondition condition : scenario.getConditions()) {
+            if (!sensorsState.containsKey(condition.getSensor().getId())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean checkAllConditionsFast(Scenario scenario, Map<String, SensorStateAvro> sensorsState) {
+        for (ScenarioCondition sc : scenario.getConditions()) {
+            if (!checkConditionFast(sc, sensorsState)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean checkConditionFast(ScenarioCondition scenarioCondition, Map<String, SensorStateAvro> sensorsState) {
         SensorStateAvro sensorState = sensorsState.get(scenarioCondition.getSensor().getId());
 
         if (sensorState == null) {
-            log.debug("Датчик {} не найден в снапшоте для сценария '{}'",
-                    scenarioCondition.getSensor().getId(), scenarioCondition.getScenario().getName());
             return false;
         }
 
-        Object sensorValue = extractValue(sensorState.getData(), scenarioCondition.getCondition().getType());
+        Object sensorValue = extractValueFast(sensorState.getData(), scenarioCondition.getCondition().getType());
 
         if (sensorValue == null) {
-            log.debug("Не удалось извлечь значение типа {} из датчика {} для сценария '{}'",
-                    scenarioCondition.getCondition().getType(),
-                    scenarioCondition.getSensor().getId(),
-                    scenarioCondition.getScenario().getName());
             return false;
         }
 
-        boolean result = compare(sensorValue,
+        return compareFast(sensorValue,
                 scenarioCondition.getCondition().getOperation(),
                 scenarioCondition.getCondition().getValue());
-
-        log.info("=== ПРОВЕРКА УСЛОВИЯ СЦЕНАРИЯ '{}' ===", scenarioCondition.getScenario().getName());
-        log.info("Датчик ID: {}", scenarioCondition.getSensor().getId());
-        log.info("Тип датчика: {}", scenarioCondition.getCondition().getType());
-        log.info("Значение датчика: {} ({})", sensorValue, sensorValue.getClass().getSimpleName());
-        log.info("Операция: {}", scenarioCondition.getCondition().getOperation());
-        log.info("Пороговое значение: {}", scenarioCondition.getCondition().getValue());
-        log.info("Результат: {}", result);
-        log.info("======================================");
-
-        return result;
     }
 
-    private Object extractValue(Object data, ConditionType type) {
+    private Object extractValueFast(Object data, ConditionType type) {
         if (data instanceof ClimateSensorAvro climate) {
             return switch (type) {
                 case TEMPERATURE -> climate.getTemperatureC();
                 case HUMIDITY -> climate.getHumidity();
                 case CO2LEVEL -> climate.getCo2Level();
-                default -> {
-                    log.warn("Неподдерживаемый тип условия {} для ClimateSensor", type);
-                    yield null;
-                }
+                default -> null;
             };
         } else if (data instanceof LightSensorAvro light) {
             return switch (type) {
                 case LUMINOSITY -> light.getLuminosity();
-                default -> {
-                    log.warn("Неподдерживаемый тип условия {} для LightSensor", type);
-                    yield null;
-                }
+                default -> null;
             };
         } else if (data instanceof MotionSensorAvro motion) {
             return switch (type) {
-                case MOTION -> motion.getMotion();  // Возвращает Boolean
-                default -> {
-                    log.warn("Неподдерживаемый тип условия {} для MotionSensor", type);
-                    yield null;
-                }
+                case MOTION -> motion.getMotion();
+                default -> null;
             };
         } else if (data instanceof SwitchSensorAvro switchSensor) {
             return switch (type) {
-                case SWITCH -> switchSensor.getState();  // Возвращает Boolean
-                default -> {
-                    log.warn("Неподдерживаемый тип условия {} для SwitchSensor", type);
-                    yield null;
-                }
+                case SWITCH -> switchSensor.getState();
+                default -> null;
             };
         } else if (data instanceof TemperatureSensorAvro temperature) {
             return switch (type) {
                 case TEMPERATURE -> temperature.getTemperatureC();
-                default -> {
-                    log.warn("Неподдерживаемый тип условия {} для TemperatureSensor", type);
-                    yield null;
-                }
+                default -> null;
             };
         }
-        log.warn("Неизвестный тип данных: {}", data.getClass());
         return null;
     }
 
-    private boolean compare(Object sensorValue, ConditionOperation operation, Integer threshold) {
+    private boolean compareFast(Object sensorValue, ConditionOperation operation, Integer threshold) {
         if (sensorValue instanceof Boolean boolVal) {
             if (operation != ConditionOperation.EQUALS) {
-                log.warn("Для boolean значения допустима только операция EQUALS, получена: {}", operation);
                 return false;
             }
-
             boolean expectedValue = threshold != null && threshold == 1;
-            log.debug("Сравнение boolean: актуальное={}, ожидаемое={} (threshold={})",
-                    boolVal, expectedValue, threshold);
             return boolVal == expectedValue;
-
         } else if (sensorValue instanceof Integer intVal) {
             if (threshold == null) {
-                log.warn("Для int значения threshold не может быть null");
                 return false;
             }
-
             return switch (operation) {
-                case EQUALS -> {
-                    boolean eq = intVal.equals(threshold);
-                    log.debug("Сравнение int: {} == {} -> {}", intVal, threshold, eq);
-                    yield eq;
-                }
-                case GREATER_THAN -> {
-                    boolean gt = intVal > threshold;
-                    log.debug("Сравнение int: {} > {} -> {}", intVal, threshold, gt);
-                    yield gt;
-                }
-                case LOWER_THAN -> {
-                    boolean lt = intVal < threshold;
-                    log.debug("Сравнение int: {} < {} -> {}", intVal, threshold, lt);
-                    yield lt;
-                }
-                default -> {
-                    log.warn("Неподдерживаемая операция {} для int", operation);
-                    yield false;
-                }
+                case EQUALS -> intVal.equals(threshold);
+                case GREATER_THAN -> intVal > threshold;
+                case LOWER_THAN -> intVal < threshold;
+                default -> false;
             };
         }
-
-        log.warn("Неподдерживаемый тип значения для сравнения: {}", sensorValue.getClass());
         return false;
     }
 }

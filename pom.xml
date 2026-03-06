@@ -21,7 +21,6 @@
         <module>commerce</module>
         <module>aggregator</module>
         <module>analyzer</module>
-        <module>hubrouter</module>
     </modules>
 
     <properties>

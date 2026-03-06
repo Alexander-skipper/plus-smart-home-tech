@@ -7,4 +7,5 @@ import ru.yandex.practicum.model.ScenarioConditionId;
 
 @Repository
 public interface ScenarioConditionRepository extends JpaRepository<ScenarioCondition, ScenarioConditionId> {
+    void deleteByScenarioId(Long scenarioId);
 }
