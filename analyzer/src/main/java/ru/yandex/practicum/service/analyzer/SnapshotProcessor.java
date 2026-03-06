@@ -17,6 +17,8 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Slf4j
 @Component
@@ -29,6 +31,8 @@ public class SnapshotProcessor {
 
     @Value("${kafka.topics.snapshots-in}")
     private String snapshotsInTopic;
+
+    private final ExecutorService executorService = Executors.newFixedThreadPool(10);
 
     public void start() {
         try {
@@ -45,7 +49,16 @@ public class SnapshotProcessor {
                     if (snapshot != null) {
                         log.debug("Получен снапшот для хаба {}, timestamp: {}",
                                 snapshot.getHubId(), snapshot.getTimestamp());
-                        scenarioAnalyzer.analyze(snapshot);
+
+                        SensorsSnapshotAvro snapshotCopy = snapshot; // нужна копия для лямбды
+                        executorService.submit(() -> {
+                            try {
+                                scenarioAnalyzer.analyze(snapshotCopy);
+                            } catch (Exception e) {
+                                log.error("Ошибка при анализе снапшота для хаба {}",
+                                        snapshotCopy.getHubId(), e);
+                            }
+                        });
                     }
 
                     currentOffsets.put(
@@ -66,6 +79,7 @@ public class SnapshotProcessor {
         } catch (Exception e) {
             log.error("Ошибка в SnapshotProcessor", e);
         } finally {
+            executorService.shutdown();
             consumer.close();
             log.info("SnapshotProcessor закрыт");
         }
