@@ -28,11 +28,16 @@ public class ScenarioAnalyzer {
         String hubId = snapshot.getHubId();
         Map<String, SensorStateAvro> sensorsState = snapshot.getSensorsState();
 
+        log.debug("Анализ снапшота для хаба {}, датчиков: {}", hubId, sensorsState.size());
+
         List<Scenario> scenariosLite = scenarioRepository.findByHubIdWithDetails(hubId);
 
         if (scenariosLite.isEmpty()) {
+            log.debug("Нет сценариев для хаба {}", hubId);
             return;
         }
+
+        log.debug("Найдено сценариев для хаба {}: {}", hubId, scenariosLite.size());
 
         List<Long> scenarioIds = scenariosLite.stream()
                 .map(Scenario::getId)
@@ -41,19 +46,26 @@ public class ScenarioAnalyzer {
         List<Scenario> scenarios = scenarioRepository.findByIdsWithDetails(scenarioIds);
 
         for (Scenario scenario : scenarios) {
+            log.debug("Проверка сценария '{}' для хаба {}", scenario.getName(), hubId);
+
             if (!hasAllSensors(scenario, sensorsState)) {
+                log.debug("Не все датчики для сценария '{}' доступны", scenario.getName());
                 continue;
             }
 
             boolean allConditionsMet = checkAllConditionsFast(scenario, sensorsState);
 
             if (allConditionsMet) {
+                log.info("Условия сценария '{}' выполнены для хаба {}", scenario.getName(), hubId);
+
                 if (shouldExecuteActions(scenario, sensorsState)) {
-                    log.info("Сценарий '{}' выполняется для хаба {}", scenario.getName(), hubId);
+                    log.info("Выполнение сценария '{}' для хаба {}", scenario.getName(), hubId);
                     actionExecutor.executeActions(hubId, scenario.getName(), scenario.getActions());
                 } else {
                     log.debug("Сценарий '{}' уже выполнен, действия не требуются", scenario.getName());
                 }
+            } else {
+                log.debug("Условия сценария '{}' НЕ выполнены", scenario.getName());
             }
         }
     }
@@ -70,8 +82,7 @@ public class ScenarioAnalyzer {
             }
 
             Object currentValue = extractValueForAction(targetState.getData(), actionType);
-
-            boolean shouldExecute = shouldExecuteForActionType(currentValue, actionType);
+            boolean shouldExecute = shouldExecuteForActionType(currentValue, actionType, action.getAction().getValue());
 
             if (shouldExecute) {
                 log.debug("Действие {} для датчика {} необходимо выполнить (текущее значение: {})",
@@ -85,8 +96,28 @@ public class ScenarioAnalyzer {
         return false;
     }
 
-    private boolean shouldExecuteForActionType(Object currentValue, ActionType actionType) {
-        return true;
+    private boolean shouldExecuteForActionType(Object currentValue, ActionType actionType, Integer targetValue) {
+        if (currentValue == null) return true;
+
+        switch (actionType) {
+            case ACTIVATE:
+                // Активировать, если устройство выключено
+                return Boolean.FALSE.equals(currentValue);
+            case DEACTIVATE:
+                // Деактивировать, если устройство включено
+                return Boolean.TRUE.equals(currentValue);
+            case INVERSE:
+                // Инвертировать всегда имеет смысл
+                return true;
+            case SET_VALUE:
+                // Установить значение, если текущее отличается от целевого
+                if (currentValue instanceof Integer) {
+                    return !currentValue.equals(targetValue);
+                }
+                return true;
+            default:
+                return true;
+        }
     }
 
     private Object extractValueForAction(Object data, ActionType actionType) {

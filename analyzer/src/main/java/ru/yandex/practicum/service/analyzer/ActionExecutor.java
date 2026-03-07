@@ -2,6 +2,7 @@ package ru.yandex.practicum.service.analyzer;
 
 import com.google.protobuf.Timestamp;
 import io.grpc.StatusRuntimeException;
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import net.devh.boot.grpc.client.inject.GrpcClient;
 import org.springframework.stereotype.Component;
@@ -26,7 +27,25 @@ public class ActionExecutor {
         this.hubRouterClient = hubRouterClient;
     }
 
+    @PostConstruct
+    public void checkConnection() {
+        try {
+            log.info("Проверка gRPC соединения с hub-router...");
+            // Просто проверяем, что канал существует
+            if (hubRouterClient != null && hubRouterClient.getChannel() != null) {
+                log.info("gRPC клиент настроен, канал: {}", hubRouterClient.getChannel().authority());
+            } else {
+                log.error("gRPC клиент не инициализирован!");
+            }
+        } catch (Exception e) {
+            log.error("ОШИБКА gRPC соединения: {}", e.getMessage(), e);
+        }
+    }
+
     public void executeActions(String hubId, String scenarioName, Set<ScenarioAction> actions) {
+        log.info("Выполнение действий для сценария '{}', hubId={}, действий: {}",
+                scenarioName, hubId, actions.size());
+
         actions.forEach(scenarioAction -> {
             try {
                 DeviceActionProto.Builder actionBuilder = DeviceActionProto.newBuilder()
@@ -37,23 +56,29 @@ public class ActionExecutor {
                     actionBuilder.setValue(scenarioAction.getAction().getValue());
                 }
 
+                Instant now = Instant.now();
                 DeviceActionRequest request = DeviceActionRequest.newBuilder()
                         .setHubId(hubId)
                         .setScenarioName(scenarioName)
                         .setAction(actionBuilder.build())
                         .setTimestamp(Timestamp.newBuilder()
-                                .setSeconds(Instant.now().getEpochSecond())
-                                .setNanos(Instant.now().getNano()))
+                                .setSeconds(now.getEpochSecond())
+                                .setNanos(now.getNano()))
                         .build();
 
-                hubRouterClient.handleDeviceAction(request);
-                log.info("Отправлена команда: hubId={}, scenario={}, sensorId={}, action={}, value={}",
+                log.info("Отправка gRPC запроса: hubId={}, scenario={}, sensorId={}, action={}, value={}",
                         hubId, scenarioName, scenarioAction.getSensor().getId(),
                         scenarioAction.getAction().getType(),
                         scenarioAction.getAction().getValue());
 
+                hubRouterClient.handleDeviceAction(request);
+
+                log.info("Команда успешно отправлена: hubId={}, scenario={}, sensorId={}",
+                        hubId, scenarioName, scenarioAction.getSensor().getId());
+
             } catch (StatusRuntimeException e) {
-                log.error("Ошибка gRPC при отправке действия: {}", e.getMessage());
+                log.error("Ошибка gRPC при отправке действия: статус={}, описание={}",
+                        e.getStatus(), e.getMessage(), e);
             } catch (Exception e) {
                 log.error("Ошибка выполнения действия", e);
             }

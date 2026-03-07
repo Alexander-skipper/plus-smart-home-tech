@@ -30,7 +30,6 @@ kafka:
       fetch-max-wait-ms: 100
     hub:
       group-id: hub-event-processor
-
       auto-offset-reset: earliest
       enable-auto-commit: true
       max-poll-records: 100
@@ -49,3 +48,4 @@ grpc:
 logging:
   level:
     ru.yandex.practicum: DEBUG
+    io.grpc: DEBUG
