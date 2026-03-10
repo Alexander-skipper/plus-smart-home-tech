@@ -20,6 +20,7 @@
         <module>infra</module>
         <module>commerce</module>
         <module>aggregator</module>
+        <module>analyzer</module>
     </modules>
 
     <properties>

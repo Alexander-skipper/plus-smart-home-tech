@@ -1,4 +1,15 @@
 services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: smart-home-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: analyzer
+      POSTGRES_USER: analyzer
+      POSTGRES_PASSWORD: analyzer
+    restart: unless-stopped
+
   kafka:
     image: confluentinc/confluent-local:7.4.3
     hostname: kafka
