@@ -12,3 +12,8 @@ kafka:
   topics:
     sensors-in: telemetry.sensors.v1
     snapshots-out: telemetry.snapshots.v1
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG
+    org.springframework.boot.context.config: TRACE

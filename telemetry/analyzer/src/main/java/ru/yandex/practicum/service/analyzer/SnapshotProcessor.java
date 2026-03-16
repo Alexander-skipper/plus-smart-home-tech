@@ -52,14 +52,21 @@ public class SnapshotProcessor {
 
                 for (ConsumerRecord<String, SensorsSnapshotAvro> record : records) {
                     SensorsSnapshotAvro snapshot = record.value();
-                    if (snapshot != null) {
-                        processSnapshot(snapshot);
-                    }
 
-                    currentOffsets.put(
-                            new TopicPartition(record.topic(), record.partition()),
-                            new OffsetAndMetadata(record.offset() + 1)
-                    );
+                    try {
+                        if (snapshot != null) {
+                            processSnapshot(snapshot);
+                        }
+
+                        currentOffsets.put(
+                                new TopicPartition(record.topic(), record.partition()),
+                                new OffsetAndMetadata(record.offset() + 1)
+                        );
+
+                    } catch (Exception e) {
+                        log.error("Ошибка обработки снапшота для offset {}, сообщение НЕ будет закоммичено",
+                                record.offset(), e);
+                    }
                 }
 
                 if (!currentOffsets.isEmpty()) {
@@ -83,7 +90,7 @@ public class SnapshotProcessor {
         long snapshotStart = System.currentTimeMillis();
 
         try {
-            log.info(">>> ОБРАБОТКА СНАПШОТА для хаба: {}, timestamp: {}, датчиков: {}",
+            log.info("ОБРАБОТКА СНАПШОТА для хаба: {}, timestamp: {}, датчиков: {}",
                     snapshot.getHubId(), snapshot.getTimestamp(), snapshot.getSensorsState().size());
 
             scenarioAnalyzer.analyze(snapshot);
@@ -96,6 +103,7 @@ public class SnapshotProcessor {
 
         } catch (Exception e) {
             log.error("ОШИБКА при анализе снапшота для хаба {}", snapshot.getHubId(), e);
+            throw e;
         }
     }
 }
