@@ -2,9 +2,9 @@ spring:
   application:
     name: warehouse
   datasource:
-    url: jdbc:postgresql://localhost:5432/warehouse
-    username: warehouse
-    password: warehouse
+    url: jdbc:postgresql://localhost:5432/postgres
+    username: postgres
+    password: postgres
     driver-class-name: org.postgresql.Driver
   sql:
     init:
