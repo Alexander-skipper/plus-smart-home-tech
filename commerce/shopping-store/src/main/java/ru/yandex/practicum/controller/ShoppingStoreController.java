@@ -11,10 +11,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import jakarta.validation.Valid;
 import ru.yandex.practicum.client.ShoppingStoreClient;
-import ru.yandex.practicum.dto.ProductCategory;
-import ru.yandex.practicum.dto.ProductDto;
-import ru.yandex.practicum.dto.ProductState;
-import ru.yandex.practicum.dto.SetProductQuantityStateRequest;
+import ru.yandex.practicum.dto.*;
 import ru.yandex.practicum.entity.Product;
 import ru.yandex.practicum.repository.ProductRepository;
 
@@ -34,16 +31,15 @@ public class ShoppingStoreController implements ShoppingStoreClient {
     @Override
     @GetMapping
     public Page<ProductDto> getProducts(
-            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "category", required = true) String category,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size,
             @RequestParam(value = "sort", defaultValue = "productName,asc") String[] sort) {
 
         Pageable pageable = PageRequest.of(page, size, Sort.by(parseSort(sort)));
 
-        if (category == null || category.isEmpty()) {
-            return productRepository.findAll(pageable)
-                    .map(this::convertToDto);
+        if (category == null || category.trim().isEmpty()) {
+            return productRepository.findAll(pageable).map(this::convertToDto);
         }
 
         try {
@@ -80,7 +76,9 @@ public class ShoppingStoreController implements ShoppingStoreClient {
         }
 
         Product product = convertToEntity(productDto);
-        product.setProductState(ProductState.ACTIVE);
+        if (product.getProductState() == null) {
+            product.setProductState(ProductState.ACTIVE);
+        }
 
         try {
             Product savedProduct = productRepository.save(product);
@@ -150,16 +148,17 @@ public class ShoppingStoreController implements ShoppingStoreClient {
     @Override
     @PostMapping("/quantityState")
     public Boolean setProductQuantityState(
-            @Valid @RequestBody SetProductQuantityStateRequest request) {
+            @RequestParam("productId") UUID productId,
+            @RequestParam("quantityState") QuantityState quantityState) {
 
         try {
-            Product product = productRepository.findById(request.getProductId())
+            Product product = productRepository.findById(productId)
                     .orElseThrow(() -> new ResponseStatusException(
                             HttpStatus.NOT_FOUND,
                             "Товар не найден"
                     ));
 
-            product.setQuantityState(request.getQuantityState());
+            product.setQuantityState(quantityState);
             productRepository.save(product);
             return true;
         } catch (Exception e) {
@@ -200,6 +199,7 @@ public class ShoppingStoreController implements ShoppingStoreClient {
         if (dto.getDescription() != null) product.setDescription(dto.getDescription());
         if (dto.getImageSrc() != null) product.setImageSrc(dto.getImageSrc());
         if (dto.getQuantityState() != null) product.setQuantityState(dto.getQuantityState());
+        if (dto.getProductState() != null) product.setProductState(dto.getProductState());
         if (dto.getProductCategory() != null) product.setProductCategory(dto.getProductCategory());
         if (dto.getPrice() > 0) product.setPrice(dto.getPrice());
     }

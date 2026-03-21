@@ -3,7 +3,8 @@ CREATE SCHEMA IF NOT EXISTS shopping_cart_schema;
 CREATE TABLE IF NOT EXISTS shopping_cart_schema.shopping_carts (
     shopping_cart_id UUID PRIMARY KEY,
     username VARCHAR(100) NOT NULL UNIQUE,
-    active BOOLEAN NOT NULL DEFAULT TRUE
+    active BOOLEAN NOT NULL DEFAULT TRUE,
+    version BIGINT DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS shopping_cart_schema.cart_products (
