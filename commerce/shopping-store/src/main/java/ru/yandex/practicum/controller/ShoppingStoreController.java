@@ -15,6 +15,8 @@ import ru.yandex.practicum.dto.*;
 import ru.yandex.practicum.entity.Product;
 import ru.yandex.practicum.repository.ProductRepository;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -36,11 +38,7 @@ public class ShoppingStoreController implements ShoppingStoreClient {
             @RequestParam(value = "size", defaultValue = "20") int size,
             @RequestParam(value = "sort", defaultValue = "productName,asc") String[] sort) {
 
-        Pageable pageable = PageRequest.of(page, size, Sort.by(parseSort(sort)));
-
-        if (category == null || category.trim().isEmpty()) {
-            return productRepository.findAll(pageable).map(this::convertToDto);
-        }
+        Pageable pageable = PageRequest.of(page, size, parseSort(sort));
 
         try {
             ProductCategory productCategory = ProductCategory.valueOf(category);
@@ -204,19 +202,31 @@ public class ShoppingStoreController implements ShoppingStoreClient {
         if (dto.getPrice() > 0) product.setPrice(dto.getPrice());
     }
 
-    private Sort.Order[] parseSort(String[] sortParams) {
+    private Sort parseSort(String[] sortParams) {
         if (sortParams == null || sortParams.length == 0) {
-            return new Sort.Order[]{Sort.Order.asc("productName")};
+            return Sort.by(Sort.Direction.ASC, "productName");
         }
 
-        return java.util.Arrays.stream(sortParams)
-                .map(param -> {
-                    String[] parts = param.split(",");
-                    String property = parts[0];
-                    Sort.Direction direction = parts.length > 1 && "desc".equalsIgnoreCase(parts[1])
-                            ? Sort.Direction.DESC : Sort.Direction.ASC;
-                    return new Sort.Order(direction, property);
-                })
-                .toArray(Sort.Order[]::new);
+        List<Sort.Order> orders = new ArrayList<>();
+
+        if (sortParams.length > 1 && (sortParams[1].equalsIgnoreCase("ASC")
+                || sortParams[1].equalsIgnoreCase("DESC"))) {
+            String property = sortParams[0].trim();
+            Sort.Direction direction = sortParams[1].equalsIgnoreCase("DESC")
+                    ? Sort.Direction.DESC : Sort.Direction.ASC;
+            orders.add(new Sort.Order(direction, property));
+        } else {
+            for (String param : sortParams) {
+                String[] parts = param.split(",");
+                String property = parts[0].trim();
+                Sort.Direction direction = Sort.Direction.ASC;
+                if (parts.length > 1 && "desc".equalsIgnoreCase(parts[1].trim())) {
+                    direction = Sort.Direction.DESC;
+                }
+                orders.add(new Sort.Order(direction, property));
+            }
+        }
+
+        return Sort.by(orders);
     }
 }

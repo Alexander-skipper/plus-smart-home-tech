@@ -1,6 +1,5 @@
 package ru.yandex.practicum.dto;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.constraints.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -14,7 +13,6 @@ import java.util.UUID;
 @Builder
 public class ProductDto {
 
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     private UUID productId;
 
     @NotBlank(message = "Название продукта обязательно")
