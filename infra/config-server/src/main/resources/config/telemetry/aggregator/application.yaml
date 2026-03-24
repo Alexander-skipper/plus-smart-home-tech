@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: aggregator
+
+kafka:
+  bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  consumer:
+    group-id: aggregator-group
+    auto-offset-reset: earliest
+    enable-auto-commit: false
+    max-poll-records: 500
+  topics:
+    sensors-in: telemetry.sensors.v1
+    snapshots-out: telemetry.snapshots.v1
+
+logging:
+  level:
+    org.springframework.cloud.config: DEBUG
+    org.springframework.boot.context.config: TRACE

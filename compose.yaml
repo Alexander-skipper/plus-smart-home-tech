@@ -5,9 +5,9 @@ services:
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_DB: analyzer
-      POSTGRES_USER: analyzer
-      POSTGRES_PASSWORD: analyzer
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
     restart: unless-stopped
 
   kafka:
