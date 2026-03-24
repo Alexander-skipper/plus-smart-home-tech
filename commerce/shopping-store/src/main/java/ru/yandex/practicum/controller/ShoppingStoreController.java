@@ -12,8 +12,7 @@ import org.springframework.web.server.ResponseStatusException;
 import jakarta.validation.Valid;
 import ru.yandex.practicum.client.ShoppingStoreClient;
 import ru.yandex.practicum.dto.*;
-import ru.yandex.practicum.entity.Product;
-import ru.yandex.practicum.repository.ProductRepository;
+import ru.yandex.practicum.service.ShoppingStoreService;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -23,11 +22,11 @@ import java.util.UUID;
 @RequestMapping("/api/v1/shopping-store")
 public class ShoppingStoreController implements ShoppingStoreClient {
 
-    private final ProductRepository productRepository;
+    private final ShoppingStoreService shoppingStoreService;
 
     @Autowired
-    public ShoppingStoreController(ProductRepository productRepository) {
-        this.productRepository = productRepository;
+    public ShoppingStoreController(ShoppingStoreService shoppingStoreService) {
+        this.shoppingStoreService = shoppingStoreService;
     }
 
     @Override
@@ -42,8 +41,7 @@ public class ShoppingStoreController implements ShoppingStoreClient {
 
         try {
             ProductCategory productCategory = ProductCategory.valueOf(category);
-            return productRepository.findByProductCategory(productCategory, pageable)
-                    .map(this::convertToDto);
+            return shoppingStoreService.getProducts(productCategory, pageable);
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -55,12 +53,7 @@ public class ShoppingStoreController implements ShoppingStoreClient {
     @Override
     @GetMapping("/{productId}")
     public ProductDto getProduct(@PathVariable("productId") UUID productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Товар не найден"
-                ));
-        return convertToDto(product);
+        return shoppingStoreService.getProduct(productId);
     }
 
     @Override
@@ -72,21 +65,7 @@ public class ShoppingStoreController implements ShoppingStoreClient {
                     "ID товара не должен быть указан при создании"
             );
         }
-
-        Product product = convertToEntity(productDto);
-        if (product.getProductState() == null) {
-            product.setProductState(ProductState.ACTIVE);
-        }
-
-        try {
-            Product savedProduct = productRepository.save(product);
-            return convertToDto(savedProduct);
-        } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Ошибка при сохранении товара"
-            );
-        }
+        return shoppingStoreService.createNewProduct(productDto);
     }
 
     @Override
@@ -98,49 +77,13 @@ public class ShoppingStoreController implements ShoppingStoreClient {
                     "ID товара обязательно для обновления"
             );
         }
-
-        Product existingProduct = productRepository.findById(productDto.getProductId())
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.NOT_FOUND,
-                        "Товар не найден"
-                ));
-
-        updateEntityFromDto(existingProduct, productDto);
-
-        try {
-            Product updatedProduct = productRepository.save(existingProduct);
-            return convertToDto(updatedProduct);
-        } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Ошибка при обновлении товара"
-            );
-        }
+        return shoppingStoreService.updateProduct(productDto);
     }
 
     @Override
     @PostMapping("/removeProductFromStore")
     public Boolean removeProductFromStore(@RequestBody UUID productId) {
-        try {
-            Product product = productRepository.findById(productId)
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.NOT_FOUND,
-                            "Товар не найден"
-                    ));
-
-            if (product.getProductState() == ProductState.DEACTIVATE) {
-                return false;
-            }
-
-            product.setProductState(ProductState.DEACTIVATE);
-            productRepository.save(product);
-            return true;
-        } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Ошибка при удалении товара"
-            );
-        }
+        return shoppingStoreService.removeProductFromStore(productId);
     }
 
     @Override
@@ -148,58 +91,7 @@ public class ShoppingStoreController implements ShoppingStoreClient {
     public Boolean setProductQuantityState(
             @RequestParam("productId") UUID productId,
             @RequestParam("quantityState") QuantityState quantityState) {
-
-        try {
-            Product product = productRepository.findById(productId)
-                    .orElseThrow(() -> new ResponseStatusException(
-                            HttpStatus.NOT_FOUND,
-                            "Товар не найден"
-                    ));
-
-            product.setQuantityState(quantityState);
-            productRepository.save(product);
-            return true;
-        } catch (Exception e) {
-            throw new ResponseStatusException(
-                    HttpStatus.INTERNAL_SERVER_ERROR,
-                    "Ошибка при изменении состояния количества"
-            );
-        }
-    }
-
-    private ProductDto convertToDto(Product product) {
-        return ProductDto.builder()
-                .productId(product.getProductId())
-                .productName(product.getProductName())
-                .description(product.getDescription())
-                .imageSrc(product.getImageSrc())
-                .quantityState(product.getQuantityState())
-                .productState(product.getProductState())
-                .productCategory(product.getProductCategory())
-                .price(product.getPrice())
-                .build();
-    }
-
-    private Product convertToEntity(ProductDto dto) {
-        return Product.builder()
-                .productName(dto.getProductName())
-                .description(dto.getDescription())
-                .imageSrc(dto.getImageSrc())
-                .quantityState(dto.getQuantityState())
-                .productState(dto.getProductState())
-                .productCategory(dto.getProductCategory())
-                .price(dto.getPrice())
-                .build();
-    }
-
-    private void updateEntityFromDto(Product product, ProductDto dto) {
-        if (dto.getProductName() != null) product.setProductName(dto.getProductName());
-        if (dto.getDescription() != null) product.setDescription(dto.getDescription());
-        if (dto.getImageSrc() != null) product.setImageSrc(dto.getImageSrc());
-        if (dto.getQuantityState() != null) product.setQuantityState(dto.getQuantityState());
-        if (dto.getProductState() != null) product.setProductState(dto.getProductState());
-        if (dto.getProductCategory() != null) product.setProductCategory(dto.getProductCategory());
-        if (dto.getPrice() > 0) product.setPrice(dto.getPrice());
+        return shoppingStoreService.setProductQuantityState(productId, quantityState);
     }
 
     private Sort parseSort(String[] sortParams) {

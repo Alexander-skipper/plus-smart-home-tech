@@ -4,14 +4,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import ru.yandex.practicum.client.ShoppingCartClient;
-import ru.yandex.practicum.client.WarehouseServiceClient;
 import ru.yandex.practicum.dto.ChangeProductQuantityRequest;
 import ru.yandex.practicum.dto.ShoppingCartDto;
-import ru.yandex.practicum.entity.ShoppingCart;
-import ru.yandex.practicum.exceptions.NoProductsInShoppingCartException;
 import ru.yandex.practicum.exceptions.NotAuthorizedUserException;
-import ru.yandex.practicum.exceptions.ProductInShoppingCartLowQuantityInWarehouse;
-import ru.yandex.practicum.repository.ShoppingCartRepository;
+import ru.yandex.practicum.service.ShoppingCartService;
 
 import java.util.List;
 import java.util.Map;
@@ -21,25 +17,18 @@ import java.util.UUID;
 @RequestMapping("/api/v1/shopping-cart")
 public class ShoppingCartController implements ShoppingCartClient {
 
-    private final ShoppingCartRepository cartRepository;
-    private final WarehouseServiceClient warehouseClient;
+    private final ShoppingCartService shoppingCartService;
 
     @Autowired
-    public ShoppingCartController(ShoppingCartRepository cartRepository,
-                                  WarehouseServiceClient warehouseClient) {
-        this.cartRepository = cartRepository;
-        this.warehouseClient = warehouseClient;
+    public ShoppingCartController(ShoppingCartService shoppingCartService) {
+        this.shoppingCartService = shoppingCartService;
     }
 
     @Override
     @GetMapping
     public ShoppingCartDto getShoppingCart(@RequestParam("username") String username) {
         validateUsername(username);
-
-        ShoppingCart cart = cartRepository.findByUsername(username)
-                .orElseGet(() -> createNewCart(username));
-
-        return convertToDto(cart);
+        return shoppingCartService.getShoppingCart(username);
     }
 
     @Override
@@ -49,41 +38,14 @@ public class ShoppingCartController implements ShoppingCartClient {
             @RequestBody Map<UUID, Long> products) {
 
         validateUsername(username);
-
-        ShoppingCart cart = cartRepository.findByUsername(username)
-                .orElseGet(() -> createNewCart(username));
-
-        if (!cart.isActive()) {
-            throw new NotAuthorizedUserException(
-                    "Корзина деактивирована");
-        }
-
-        ShoppingCartDto cartForCheck = new ShoppingCartDto(cart.getShoppingCartId(), products);
-        try {
-            warehouseClient.checkProductQuantityEnoughForShoppingCart(cartForCheck);
-        } catch (ProductInShoppingCartLowQuantityInWarehouse ex) {
-            throw ex;
-        }
-
-        products.forEach((productId, quantity) -> {
-            cart.getProducts().merge(productId, quantity, Long::sum);
-        });
-
-        ShoppingCart savedCart = cartRepository.save(cart);
-        return convertToDto(savedCart);
+        return shoppingCartService.addProductToShoppingCart(username, products);
     }
 
     @Override
     @DeleteMapping
     public void deactivateCurrentShoppingCart(@RequestParam("username") String username) {
         validateUsername(username);
-
-        ShoppingCart cart = cartRepository.findByUsername(username)
-                .orElseThrow(() -> new NotAuthorizedUserException(
-                        "Корзина не найдена"));
-
-        cart.setActive(false);
-        cartRepository.save(cart);
+        shoppingCartService.deactivateCurrentShoppingCart(username);
     }
 
     @Override
@@ -93,30 +55,7 @@ public class ShoppingCartController implements ShoppingCartClient {
             @RequestBody List<UUID> productIds) {
 
         validateUsername(username);
-
-        ShoppingCart cart = cartRepository.findByUsername(username)
-                .orElseThrow(() -> new NotAuthorizedUserException(
-                        "Корзина не найдена"));
-
-        if (!cart.isActive()) {
-            throw new NotAuthorizedUserException(
-                    "Корзина деактивирована");
-        }
-
-        boolean anyRemoved = false;
-        for (UUID productId : productIds) {
-            if (cart.getProducts().remove(productId) != null) {
-                anyRemoved = true;
-            }
-        }
-
-        if (!anyRemoved) {
-            throw new NoProductsInShoppingCartException(
-                    "Указанные товары не найдены в корзине");
-        }
-
-        ShoppingCart savedCart = cartRepository.save(cart);
-        return convertToDto(savedCart);
+        return shoppingCartService.removeFromShoppingCart(username, productIds);
     }
 
     @Override
@@ -126,33 +65,7 @@ public class ShoppingCartController implements ShoppingCartClient {
             @RequestBody ChangeProductQuantityRequest request) {
 
         validateUsername(username);
-
-        ShoppingCart cart = cartRepository.findByUsername(username)
-                .orElseThrow(() -> new NotAuthorizedUserException(
-                        "Корзина не найдена"));
-
-        if (!cart.isActive()) {
-            throw new NotAuthorizedUserException(
-                    "Корзина деактивирована");
-        }
-
-        if (!cart.getProducts().containsKey(request.getProductId())) {
-            throw new NoProductsInShoppingCartException(
-                    "Товар не найден в корзине");
-        }
-
-        Map<UUID, Long> singleProductMap = Map.of(request.getProductId(), request.getNewQuantity());
-        ShoppingCartDto cartForCheck = new ShoppingCartDto(cart.getShoppingCartId(), singleProductMap);
-
-        try {
-            warehouseClient.checkProductQuantityEnoughForShoppingCart(cartForCheck);
-        } catch (ProductInShoppingCartLowQuantityInWarehouse ex) {
-            throw ex;
-        }
-
-        cart.getProducts().put(request.getProductId(), request.getNewQuantity());
-        ShoppingCart savedCart = cartRepository.save(cart);
-        return convertToDto(savedCart);
+        return shoppingCartService.changeProductQuantity(username, request);
     }
 
     private void validateUsername(String username) {
@@ -160,19 +73,5 @@ public class ShoppingCartController implements ShoppingCartClient {
             throw new NotAuthorizedUserException(
                     "Имя пользователя не должно быть пустым");
         }
-    }
-
-    private ShoppingCart createNewCart(String username) {
-        ShoppingCart cart = new ShoppingCart();
-        cart.setUsername(username);
-        cart.setActive(true);
-        return cartRepository.save(cart);
-    }
-
-    private ShoppingCartDto convertToDto(ShoppingCart cart) {
-        return new ShoppingCartDto(
-                cart.getShoppingCartId(),
-                cart.getProducts()
-        );
     }
 }
