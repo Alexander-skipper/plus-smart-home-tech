@@ -94,10 +94,7 @@ public class DeliveryService {
             cost = cost + (BASE_COST * 1);
         }
 
-        OrderDto order = orderClient.getClientOrders(null).stream()
-                .filter(o -> o.getOrderId().equals(orderId))
-                .findFirst()
-                .orElse(null);
+        OrderDto order = orderClient.getOrder(orderId);
 
         if (order != null && Boolean.TRUE.equals(order.getFragile())) {
             cost = cost + (cost * 0.2);

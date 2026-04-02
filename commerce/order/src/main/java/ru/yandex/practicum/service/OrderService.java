@@ -23,21 +23,19 @@ public class OrderService {
     private final WarehouseClient warehouseClient;
     private final PaymentClient paymentClient;
     private final DeliveryClient deliveryClient;
-    private final ShoppingStoreClient shoppingStoreClient;
+
 
     @Autowired
     public OrderService(OrderRepository orderRepository,
                         ShoppingCartClient shoppingCartClient,
                         WarehouseClient warehouseClient,
                         PaymentClient paymentClient,
-                        DeliveryClient deliveryClient,
-                        ShoppingStoreClient shoppingStoreClient) {
+                        DeliveryClient deliveryClient) {
         this.orderRepository = orderRepository;
         this.shoppingCartClient = shoppingCartClient;
         this.warehouseClient = warehouseClient;
         this.paymentClient = paymentClient;
         this.deliveryClient = deliveryClient;
-        this.shoppingStoreClient = shoppingStoreClient;
     }
 
     @Transactional(readOnly = true)
@@ -55,6 +53,12 @@ public class OrderService {
 
     @Transactional
     public OrderDto createNewOrder(CreateNewOrderRequest request) {
+        String username = request.getUsername();
+
+        if (username == null || username.isBlank()) {
+            throw new IllegalArgumentException("Username не может быть пустым");
+        }
+
         ShoppingCartDto cart = request.getShoppingCart();
 
         if (cart.getProducts() == null || cart.getProducts().isEmpty()) {
@@ -71,11 +75,12 @@ public class OrderService {
                 .deliveryVolume(booked.getDeliveryVolume())
                 .fragile(booked.getFragile())
                 .deliveryAddress(convertToEmbeddable(request.getDeliveryAddress()))
+                .username(username)
                 .build();
 
         Order savedOrder = orderRepository.save(order);
 
-        shoppingCartClient.deactivateCurrentShoppingCart(getUsernameFromCart(cart));
+        shoppingCartClient.deactivateCurrentShoppingCart(username);
 
         return convertToDto(savedOrder);
     }
@@ -222,10 +227,6 @@ public class OrderService {
     private Order getOrderOrThrow(UUID orderId) {
         return orderRepository.findById(orderId)
                 .orElseThrow(() -> new NoOrderFoundException("Заказ не найден: " + orderId));
-    }
-
-    private String getUsernameFromCart(ShoppingCartDto cart) {
-        return "user";
     }
 
     private AddressEmbeddable convertToEmbeddable(AddressDto dto) {

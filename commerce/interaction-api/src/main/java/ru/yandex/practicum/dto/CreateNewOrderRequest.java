@@ -15,4 +15,7 @@ public class CreateNewOrderRequest {
 
     @NotNull(message = "Адрес доставки обязателен")
     private AddressDto deliveryAddress;
+
+    @NotNull(message = "Имя пользователя обязательно")
+    private String username;
 }
