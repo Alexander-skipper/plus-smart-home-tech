@@ -6,6 +6,8 @@ import ru.yandex.practicum.client.WarehouseClient;
 import ru.yandex.practicum.dto.*;
 import ru.yandex.practicum.service.WarehouseService;
 
+import java.util.Map;
+import java.util.UUID;
 import java.util.random.RandomGenerator;
 
 @RestController
@@ -45,5 +47,20 @@ public class WarehouseController implements WarehouseClient {
     @GetMapping("/address")
     public AddressDto getWarehouseAddress() {
         return new AddressDto(CURRENT_ADDRESS, CURRENT_ADDRESS, CURRENT_ADDRESS, CURRENT_ADDRESS, CURRENT_ADDRESS);
+    }
+
+    @PostMapping("/shipped")
+    public void shippedToDelivery(@RequestBody ShippedToDeliveryRequest request) {
+        warehouseService.shippedToDelivery(request);
+    }
+
+    @PostMapping("/return")
+    public void acceptReturn(@RequestBody Map<UUID, Long> products) {
+        warehouseService.acceptReturn(products);
+    }
+
+    @PostMapping("/assembly")
+    public BookedProductsDto assemblyProductsForOrder(@RequestBody AssemblyProductsForOrderRequest request) {
+        return warehouseService.assemblyProductsForOrder(request);
     }
 }

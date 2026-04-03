@@ -12,3 +12,20 @@ CREATE TABLE IF NOT EXISTS warehouse_schema.warehouse_items (
 );
 
 CREATE INDEX IF NOT EXISTS idx_warehouse_product ON warehouse_schema.warehouse_items(product_id);
+
+CREATE TABLE IF NOT EXISTS warehouse_schema.order_bookings (
+    booking_id UUID PRIMARY KEY,
+    order_id UUID NOT NULL UNIQUE,
+    delivery_id UUID,
+    version BIGINT DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS warehouse_schema.booking_products (
+    booking_id UUID NOT NULL,
+    product_id UUID NOT NULL,
+    quantity BIGINT NOT NULL,
+    PRIMARY KEY (booking_id, product_id),
+    FOREIGN KEY (booking_id) REFERENCES warehouse_schema.order_bookings(booking_id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_bookings_order_id ON warehouse_schema.order_bookings(order_id);
